@@ -1,16 +1,11 @@
-//
-//  BoardList.swift
-//  TrelloClone
-//
-//  Created by Alfian Losari on 11/29/21.
-//
-
 import Foundation
+import Combine
 
 class BoardList: NSObject, ObservableObject, Identifiable, Codable {
     
     private(set) var id = UUID()
     var boardID: UUID
+    private var cancellables = Set<AnyCancellable>()
     
     @Published var name: String
     @Published var cards: [Card]
@@ -24,6 +19,7 @@ class BoardList: NSObject, ObservableObject, Identifiable, Codable {
         self.cards = cards
         self.boardID = boardID
         super.init()
+        cards.forEach(observeCard)
     }
     
     required init(from decoder: Decoder) throws {
@@ -33,6 +29,7 @@ class BoardList: NSObject, ObservableObject, Identifiable, Codable {
         self.name = try container.decode(String.self, forKey: .name)
         self.cards = try container.decode([Card].self, forKey: .cards)
         super.init()
+        cards.forEach(observeCard)
     }
     
     func encode(to encoder: Encoder) throws {
@@ -43,6 +40,40 @@ class BoardList: NSObject, ObservableObject, Identifiable, Codable {
         try container.encode(cards, forKey: .cards)
     }
     
+    private func observeCard(_ card: Card) {
+        card.objectWillChange.sink { [weak self] _ in
+            self?.objectWillChange.send()
+        }.store(in: &cancellables)
+    }
+    
+    func addNewCardWithContent(_ content: String) {
+        let newCard = Card(content: content, boardListId: id)
+        observeCard(newCard)
+        
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            self.objectWillChange.send()
+            self.cards.append(newCard)
+            
+            let updatedCards = self.cards
+            self.cards = updatedCards
+        }
+    }
+    
+    func cardIndex(id: UUID) -> Int? {
+        cards.firstIndex { $0.id == id }
+    }
+    
+    func removeCard(_ card: Card) {
+        guard let cardIndex = cardIndex(id: card.id) else { return }
+        objectWillChange.send()
+        cards.remove(at: cardIndex)
+    }
+    
+    func moveCards(fromOffsets offsets: IndexSet, toOffset offset: Int) {
+        objectWillChange.send()
+        cards.move(fromOffsets: offsets, toOffset: offset)
+    }
 }
 
 extension BoardList: NSItemProviderWriting {
@@ -63,24 +94,6 @@ extension BoardList: NSItemProviderWriting {
         }
         return nil
     }
-    
-    func cardIndex(id: UUID) -> Int? {
-        cards.firstIndex { $0.id == id }
-    }
-    
-    func addNewCardWithContent(_ content: String) {
-        cards.append(Card(content: content, boardListId: id))
-    }
-    
-    func removeCard(_ card: Card) {
-        guard let cardIndex = cardIndex(id: card.id) else { return }
-        cards.remove(at: cardIndex)
-    }
-    
-    func moveCards(fromOffsets offsets: IndexSet, toOffset offset: Int) {
-        cards.move(fromOffsets: offsets, toOffset: offset)
-    }
-    
 }
 
 extension BoardList: NSItemProviderReading {
@@ -92,5 +105,4 @@ extension BoardList: NSItemProviderReading {
     static func object(withItemProviderData data: Data, typeIdentifier: String) throws -> Self {
         try JSONDecoder().decode(Self.self, from: data)
     }
-    
 }

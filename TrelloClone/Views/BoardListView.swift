@@ -1,25 +1,16 @@
-//
-//  BoardListView.swift
-//  TrelloClone
-//
-//  Created by Alfian Losari on 11/30/21.
-//
-
 import SwiftUI
 import Introspect
 
 struct BoardListView: View {
-    
     @ObservedObject var board: Board
-    @StateObject var boardList: BoardList
-    
+    @ObservedObject var boardList: BoardList
     @State var listHeight: CGFloat = 0
+    @State private var dragging: BoardList? = nil  
     
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             headerView
             listView
-                .listStyle(.plain)
                 .frame(maxHeight: listHeight)
             
             Button("+ Add card") {
@@ -61,21 +52,25 @@ struct BoardListView: View {
     }
     
     private var listView: some View {
-        List {
-            ForEach(boardList.cards) { card in
-                CardView(boardList: boardList, card: card)
-                    .onDrag {
-                        NSItemProvider(object: card)
-                    }
+        ScrollView {
+            LazyVStack(spacing: 4) {
+                ForEach(boardList.cards) { card in
+                    CardView(boardList: boardList, card: card)
+                        .onDrag {
+                            NSItemProvider(object: card)
+                        }
+                }
+                .onInsert(of: [Card.typeIdentifier], perform: handleOnInsertCard)
+                .onMove(perform: boardList.moveCards(fromOffsets:toOffset:))
             }
-            .onInsert(of: [Card.typeIdentifier], perform: handleOnInsertCard)
-            .onMove(perform: boardList.moveCards(fromOffsets:toOffset:))
-            .listRowSeparator(.hidden)
-            .listRowInsets(.init(top: 4, leading: 8, bottom: 4, trailing: 8))
-            .listRowBackground(Color.clear)
-            .introspectTableView { listHeight = $0.contentSize.height
+            .padding(.horizontal, 8)
+        }
+        .introspectScrollView { scrollView in
+            DispatchQueue.main.async {
+                listHeight = scrollView.contentSize.height
             }
         }
+        .onDrop(of: [Card.typeIdentifier], delegate: BoardDropDelegate(board: board, boardList: boardList, lists: $board.lists, current: $dragging))
     }
     
     private func handleOnInsertCard(index: Int, itemProviders: [NSItemProvider]) {
@@ -87,7 +82,6 @@ struct BoardListView: View {
                 }
             }
         }
-        
     }
     
     private func handleBoardListRename() {
@@ -107,15 +101,13 @@ struct BoardListView: View {
             boardList.addNewCardWithContent(text)
         }
     }
-    
 }
 
 struct BoardListView_Previews: PreviewProvider {
-    
     @StateObject static var board = Board.stub
     
     static var previews: some View {
-        BoardListView(board: board, boardList: board.lists[0], listHeight: 512)
+        BoardListView(board: board, boardList: board.lists[0])
             .previewLayout(.sizeThatFits)
             .frame(width: 300, height: 512)
     }
